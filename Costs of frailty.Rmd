@@ -1,0 +1,322 @@
+---
+title: "Cost of functional independence limitations"
+author: "RSF"
+date: "2022-07-28"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1) Set-Up
+Data management for setting up the cost tables
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(openxlsx, dplyr, robumeta,metafor, clubSandwich, ggplot2, psych, naniar)
+
+setwd("~/Desktop/Manuscripts/Ongoing Projects/SR on Economic Impact of Frailty")
+data1<-read.xlsx("Cost data for meta FINAL.xlsx")
+
+
+data1<-rename(data1, c("Study_Length"="Length.(Years)"))
+
+data1$Annual.Costs.mean <- data1$Costs.mean/data1$Study_Length
+data1$Annual.Costs.sd <- data1$Costs.SD/data1$Study_Length
+
+data1$Cost.Perspective<-NA
+data1$Cost.Perspective[data1$Cost.persective == "Social" | data1$Cost.persective == "Societal" | data1$Cost.persective == "Societal "] <- "Societal"
+data1$Cost.Perspective[data1$Cost.persective == "Healthcare"] <- "Healthcare"
+data1$Cost.Perspective[data1$Cost.persective == "Personal" | data1$Cost.persective == "Patient"] <- "Personal"
+
+data2<- subset(data1, !is.na(Cost.Perspective))
+
+data3<- data2 %>%
+  mutate(Annual.Costs.sd.liberal = ifelse(is.na(Annual.Costs.sd), Annual.Costs.mean, Annual.Costs.sd),
+         Annual.Costs.sd.conservative = ifelse(is.na(Annual.Costs.sd), Annual.Costs.mean*2, Annual.Costs.sd))
+
+data3$costs.subtype.2<-NA
+data3$costs.subtype.2[data3$Cost.Subtype == "Clinical" | data3$Cost.Subtype == "Clinician"]<-"Clinician"
+data3$costs.subtype.2[data3$Cost.Subtype == "Hospital costs" | data3$Cost.Subtype == "Hospital"]<-"Hospital"
+data3$costs.subtype.2[data3$Cost.Subtype == "All" | data3$Cost.Subtype == "Total"]<-"All"
+data3$costs.subtype.2[data3$Cost.Subtype == "Assisted Services" | data3$Cost.Subtype == "Day care"]<-"Assisted Services"
+data3$costs.subtype.2[data3$Cost.Subtype == "Direct Health Care Related Costs"]<-"Direct Healthcare Related Costs"
+data3$costs.subtype.2[data3$Cost.Subtype == "Home-Help Indirect"]<-"Home-Help Indirect"
+data3$costs.subtype.2[data3$Cost.Subtype == "Home Healthcare"]<-"Home Healthcare"
+data3$costs.subtype.2[data3$Cost.Subtype == "Medications"]<-"Medications"
+data3$costs.subtype.2[data3$Cost.Subtype == "Outpatient"]<-"Outpatient"
+
+data3$Cost.Perspective[data3$costs.subtype.2 == "Medications" & data3$Cost.Perspective == "Healthcare"]<-"Personal"
+data3$Cost.Perspective[data3$costs.subtype.2 == "Outpatient" & data3$Cost.Perspective == "Societal"]<-"Healthcare"
+data3$Cost.Perspective[data3$costs.subtype.2 == "Home Healthcare" & data3$Cost.Perspective == "Personal"]<-"Societal"
+
+data4<-data3 %>%
+  mutate(Healthcare_All = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "All", Annual.Costs.mean, NA),
+         Societal_All = ifelse(Cost.Perspective == "Societal" & costs.subtype.2 == "All", Annual.Costs.mean, NA),
+         Personal_All = ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "All", Annual.Costs.mean, NA),
+         Healthcare_Clinician = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "Clinician", Annual.Costs.mean, NA),
+         Healthcare_Hospital = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "Hospital", Annual.Costs.mean, NA),
+         Healthcare_Outpatient = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "Outpatient", Annual.Costs.mean, NA),
+         Societal_Assisted = ifelse(Cost.Perspective == "Societal" & costs.subtype.2 == "Assisted Services", Annual.Costs.mean, NA),
+         Societal_HomeHealth = ifelse(Cost.Perspective == "Societal" & costs.subtype.2 == "Home Healthcare", Annual.Costs.mean, NA),
+         Personal_HealthCosts= ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "Direct Healthcare Related Costs", Annual.Costs.mean, NA),
+         Personal_HomeHelp = ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "Home-Help Indirect", Annual.Costs.mean, NA),
+         Personal_Meds = ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "Medications", Annual.Costs.mean, NA),
+         Healthcare_All_lib_SD = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "All", Annual.Costs.sd.liberal, NA),
+         Societal_All_lib_SD = ifelse(Cost.Perspective == "Societal" & costs.subtype.2 == "All", Annual.Costs.sd.liberal, NA),
+         Personal_All_lib_SD = ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "All", Annual.Costs.sd.liberal, NA),
+         Healthcare_Clinician_lib_SD = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "Clinician", Annual.Costs.sd.liberal, NA),
+         Healthcare_Hospital_lib_SD = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "Hospital", Annual.Costs.sd.liberal, NA),
+         Healthcare_Outpatient_lib_SD = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "Outpatient", Annual.Costs.sd.liberal, NA),
+         Societal_Assisted_lib_SD = ifelse(Cost.Perspective == "Societal" & costs.subtype.2 == "Assisted Services", Annual.Costs.sd.liberal, NA),
+         Societal_HomeHealth_lib_SD = ifelse(Cost.Perspective == "Societal" & costs.subtype.2 == "Home Healthcare", Annual.Costs.sd.liberal, NA),
+         Personal_HealthCosts_lib_SD = ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "Direct Healthcare Related Costs", Annual.Costs.sd.liberal, NA),
+         Personal_HomeHelp_lib_SD = ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "Home-Help Indirect", Annual.Costs.sd.liberal, NA),
+         Personal_Meds_lib_SD = ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "Medications", Annual.Costs.sd.liberal, NA),
+         Healthcare_All_con_SD = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "All", Annual.Costs.sd.conservative, NA),
+         Societal_All_con_SD = ifelse(Cost.Perspective == "Societal" & costs.subtype.2 == "All", Annual.Costs.sd.conservative, NA),
+         Personal_All_con_SD = ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "All", Annual.Costs.sd.conservative, NA),
+         Healthcare_Clinician_con_SD = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "Clinician", Annual.Costs.sd.conservative, NA),
+         Healthcare_Hospital_con_SD = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "Hospital", Annual.Costs.sd.conservative, NA),
+         Healthcare_Outpatient_con_SD = ifelse(Cost.Perspective == "Healthcare" & costs.subtype.2 == "Outpatient", Annual.Costs.sd.conservative, NA),
+         Societal_Assisted_con_SD = ifelse(Cost.Perspective == "Societal" & costs.subtype.2 == "Assisted Services", Annual.Costs.sd.conservative, NA),
+         Societal_HomeHealth_con_SD = ifelse(Cost.Perspective == "Societal" & costs.subtype.2 == "Home Healthcare", Annual.Costs.sd.conservative, NA),
+         Personal_HealthCosts_con_SD = ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "Direct Healthcare Related Costs", Annual.Costs.sd.conservative, NA),
+         Personal_HomeHelp_con_SD = ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "Home-Help Indirect", Annual.Costs.sd.conservative, NA),
+         Personal_Meds_con_SD = ifelse(Cost.Perspective == "Personal" & costs.subtype.2 == "Medications", Annual.Costs.sd.conservative, NA),)
+
+data5<-transform(data4, Healthcare_All = as.numeric(Healthcare_All),
+         Societal_All = as.numeric(Societal_All),
+         Personal_All = as.numeric(Personal_All),
+         Healthcare_Clinician = as.numeric(Healthcare_Clinician),
+         Healthcare_Hospital = as.numeric(Healthcare_Hospital),
+         Healthcare_Outpatient = as.numeric(Healthcare_Outpatient),
+         Societal_Assisted = as.numeric(Societal_Assisted),
+         Societal_HomeHealth = as.numeric(Societal_HomeHealth),
+         Personal_HealthCosts = as.numeric(Personal_HealthCosts),
+         Personal_HomeHelp = as.numeric(Personal_HomeHelp),
+         Personal_Meds = as.numeric(Personal_Meds),
+         Healthcare_All_lib_SD = as.numeric(Healthcare_All_lib_SD),
+         Societal_All_lib_SD = as.numeric(Societal_All_lib_SD),
+         Personal_All_lib_SD = as.numeric(Personal_All_lib_SD),
+         Healthcare_Clinician_lib_SD = as.numeric(Healthcare_Clinician_lib_SD),
+         Healthcare_Hospital_lib_SD = as.numeric(Healthcare_Hospital_lib_SD),
+         Healthcare_Outpatient_lib_SD = as.numeric(Healthcare_Outpatient_lib_SD),
+         Societal_Assisted_lib_SD = as.numeric(Societal_Assisted_lib_SD),
+         Societal_HomeHealth_lib_SD = as.numeric(Societal_HomeHealth_lib_SD),
+         Personal_HealthCosts_lib_SD = as.numeric(Personal_HealthCosts_lib_SD),
+         Personal_HomeHelp_lib_SD = as.numeric(Personal_HomeHelp_lib_SD),
+         Personal_Meds_lib_SD = as.numeric(Personal_Meds_lib_SD),
+         Healthcare_All_con_SD = as.numeric(Healthcare_All_con_SD),
+         Societal_All_con_SD = as.numeric(Societal_All_con_SD),
+         Personal_All_con_SD = as.numeric(Personal_All_con_SD),
+         Healthcare_Clinician_con_SD = as.numeric(Healthcare_Clinician_con_SD),
+         Healthcare_Hospital_con_SD = as.numeric(Healthcare_Hospital_con_SD),
+         Healthcare_Outpatient_con_SD = as.numeric(Healthcare_Outpatient_con_SD),
+         Societal_Assisted_con_SD = as.numeric(Societal_Assisted_con_SD),
+         Societal_HomeHealth_con_SD = as.numeric(Societal_HomeHealth_con_SD),
+         Personal_HealthCosts_con_SD = as.numeric(Personal_HealthCosts_con_SD),
+         Personal_HomeHelp_con_SD = as.numeric(Personal_HomeHelp_con_SD),
+         Personal_Meds_con_SD = as.numeric(Personal_Meds_con_SD))
+
+data5$Study_Design<-NA
+data5$Study_Design[data5$Study.Design == "Observational"]<-"Observational"
+data5$Study_Design[data5$Study.Design == "RCT" | data5$Study.Design == "RCT "] <- "RCT"
+data5$Study_Design[data5$Study.Design == "Computer Simulation" |data5$Study.Design == "Cost-effectiveness study" | data5$Study.Design == "Quasi-Experimental"] <- "Other"
+```
+
+
+# 2) Function for setting up cost-analyses
+This step provides the means, number of studies, and 95% CIs for each cost-perspective
+```{r}
+CI.intvl <- function(x){
+  avg <- as.numeric(mean(x, na.rm=TRUE))
+  std.dev<- as.numeric(sd(x, na.rm = TRUE))
+  number<- as.numeric(length(x[!is.na(x)]))
+  std.err<- as.numeric(std.dev/sqrt(number))
+  UL.CI<- avg + 1.96*std.err
+  LL.CI<- avg - 1.96*std.err
+  return(list(study_number = number, Mean=avg, Upper_Limit=UL.CI, Lower_Limit=LL.CI))
+}
+```
+
+# 3) Indexing studies by cost perspectives
+This step provides the different number of studies for each perspective
+```{r}
+Cost.perspective.counts<-data5 %>%
+ count(Cost.Perspective,Study)
+
+Cost.perspective.counts %>%
+  count(Cost.Perspective)
+```
+
+This determines the number of studies which used all 3 perspectives
+```{r}
+Cost.perspective.count2<-Cost.perspective.counts %>%
+  count(Study,Cost.Perspective)
+
+Cost.perspective.count3<-count(Cost.perspective.count2,Study)
+subset(Cost.perspective.count3,n==3)
+count(subset(Cost.perspective.count3,n==3))
+```
+
+
+# 4) Costs for each perspective
+
+## 4.1) Social
+```{r}
+#Societal Means
+CI.intvl(data5$Societal_All)
+CI.intvl(data5$Societal_HomeHealth)
+CI.intvl(data5$Societal_Assisted)
+
+#Societal SD Liberal 
+CI.intvl(data5$Societal_All_lib_SD)
+CI.intvl(data5$Societal_HomeHealth_lib_SD)
+CI.intvl(data5$Societal_Assisted_lib_SD)
+```
+
+## 4.2) Healthcare
+```{r}
+#Healthcare Means
+CI.intvl(data5$Healthcare_All)
+CI.intvl(data5$Healthcare_Clinician)
+CI.intvl(data5$Healthcare_Hospital)
+CI.intvl(data5$Healthcare_Outpatient)
+
+#Healthcare SD Liberal
+CI.intvl(data5$Healthcare_All_lib_SD)
+CI.intvl(data5$Healthcare_Clinician_lib_SD)
+CI.intvl(data5$Healthcare_Hospital_lib_SD)
+CI.intvl(data5$Healthcare_Outpatient_lib_SD)
+```
+
+## 4.3) Personal
+```{r}
+#Personal Means
+CI.intvl(data5$Personal_All)
+CI.intvl(data5$Personal_HealthCosts)
+CI.intvl(data5$Personal_HomeHelp)
+CI.intvl(data5$Personal_Meds)
+
+#Personal SD Liberal
+CI.intvl(data5$Personal_All_lib_SD)
+CI.intvl(data5$Personal_HealthCosts_lib_SD)
+CI.intvl(data5$Personal_HomeHelp_lib_SD)
+CI.intvl(data5$Personal_Meds_lib_SD)
+```
+
+
+# 5) Costs based on studies which have indices of frailty, mobility, or cognition
+
+First we stratify by the index of interest
+```{r}
+Frailty<-subset(data5, Frailty.Indexed == 1)
+Mobility<-subset(data5, Mobility.Indexed == 1)
+Cognitive<-subset(data5, Cognitive.Indexed == 1)
+```
+
+Next we look at the number of studies with each type of index
+```{r}
+Frailty %>%
+  count(Study)
+
+Mobility %>%
+  count(Study)
+
+Cognitive %>%
+  count(Study)
+```
+
+
+## 5.1) Frailty
+
+Social Costs
+```{r}
+#Societal Means
+CI.intvl(Frailty$Societal_All)
+
+#Societal SD Liberal 
+CI.intvl(Frailty$Societal_All_lib_SD)
+```
+
+Healthcare Costs
+```{r}
+#Healthcare Means
+CI.intvl(Frailty$Healthcare_All)
+
+#Healthcare SD Liberal
+CI.intvl(Frailty$Healthcare_All_lib_SD)
+```
+
+Personal Costs
+```{r}
+#Personal Means
+CI.intvl(Frailty$Personal_All)
+
+#Personal SD Liberal
+CI.intvl(Frailty$Personal_All_lib_SD)
+```
+
+
+## 5.2) Mobility
+
+Social Costs
+```{r}
+#Societal Means
+CI.intvl(Mobility$Societal_All)
+
+#Societal SD Liberal 
+CI.intvl(Mobility$Societal_All_lib_SD)
+```
+
+Healthcare Costs
+```{r}
+#Healthcare Means
+CI.intvl(Mobility$Healthcare_All)
+
+#Healthcare SD Liberal
+CI.intvl(Mobility$Healthcare_All_lib_SD)
+```
+
+Personal Costs
+```{r}
+#Personal Means
+CI.intvl(Mobility$Personal_All)
+
+#Personal SD Liberal
+CI.intvl(Mobility$Personal_All_lib_SD)
+```
+
+
+## 5.3) Cognition
+
+Social Costs
+```{r}
+#Societal Means
+CI.intvl(Cognitive$Societal_All)
+
+#Societal SD Liberal 
+CI.intvl(Cognitive$Societal_All_lib_SD)
+```
+
+Healthcare Costs
+```{r}
+#Healthcare Means
+CI.intvl(Cognitive$Healthcare_All)
+
+#Healthcare SD Liberal
+CI.intvl(Cognitive$Healthcare_All_lib_SD)
+```
+
+Personal Costs
+```{r}
+#Personal Means
+CI.intvl(Cognitive$Personal_All)
+
+#Personal SD Liberal
+CI.intvl(Cognitive$Personal_All_lib_SD)
+```
